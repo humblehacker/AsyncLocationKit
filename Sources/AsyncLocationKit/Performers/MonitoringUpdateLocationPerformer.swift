@@ -23,7 +23,9 @@
 import Foundation
 import CoreLocation.CLLocation
 
-public enum LocationUpdateEvent {
+extension CLLocation: @unchecked Sendable {}
+
+public enum LocationUpdateEvent: Sendable {
     case didPaused
     case didResume
     case didUpdateLocations(locations: [CLLocation])

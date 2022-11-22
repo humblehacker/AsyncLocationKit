@@ -23,7 +23,7 @@
 import Foundation
 import CoreLocation
 
-public enum AccuracyAuthorizationEvent {
+public enum AccuracyAuthorizationEvent: Sendable {
     case didUpdate(accuracyAuthorization: CLAccuracyAuthorization)
 }
 

@@ -35,12 +35,12 @@ public typealias AuthorizationStream = AsyncStream<AuthorizationEvent>
 public typealias AccuracyAuthorizationStream = AsyncStream<AccuracyAuthorizationEvent>
 public typealias BeaconsRangingStream = AsyncStream<BeaconRangeEvent>
 
-public final class AsyncLocationManager {
+public actor AsyncLocationManager {
     private var locationManager: CLLocationManager
     private var proxyDelegate: AsyncDelegateProxyInterface
     private var locationDelegate: CLLocationManagerDelegate
     private var desiredAccuracy: LocationAccuracy = .bestAccuracy
-    
+
     public init() {
         locationManager = CLLocationManager()
         proxyDelegate = AsyncDelegateProxy()
@@ -48,7 +48,7 @@ public final class AsyncLocationManager {
         locationManager.delegate = locationDelegate
         locationManager.desiredAccuracy = desiredAccuracy.convertingAccuracy
     }
-    
+
     public init(locationManager: CLLocationManager, desiredAccuracy: LocationAccuracy) {
         self.locationManager = locationManager
         proxyDelegate = AsyncDelegateProxy()
@@ -56,11 +56,11 @@ public final class AsyncLocationManager {
         self.locationManager.delegate = locationDelegate
         self.locationManager.desiredAccuracy = desiredAccuracy.convertingAccuracy
     }
-    
-    public convenience init(desiredAccuracy: LocationAccuracy) {
-        self.init()
-        self.desiredAccuracy = desiredAccuracy
-    }
+
+//    public init(desiredAccuracy: LocationAccuracy) {
+//        self.init()
+//        self.locationManager.desiredAccuracy = desiredAccuracy.convertingAccuracy
+//    }
 
     public func getLocationEnabled() async -> Bool {
         // Though undocumented, `locationServicesEnabled()` must not be called from the main thread. Otherwise,
@@ -84,7 +84,7 @@ public final class AsyncLocationManager {
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
             stream.onTermination = { @Sendable _ in
-                self.stopMonitoringLocationEnabled()
+                Task { await self.stopMonitoringLocationEnabled() }
             }
         }
     }
@@ -98,8 +98,9 @@ public final class AsyncLocationManager {
         return AuthorizationStream { stream in
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
-            stream.onTermination = { @Sendable _ in
-                self.stopMonitoringAuthorization()
+            stream.onTermination = {
+                @Sendable _ in
+                Task { await self.stopMonitoringAuthorization() }
             }
         }
     }
@@ -113,8 +114,9 @@ public final class AsyncLocationManager {
         return AccuracyAuthorizationStream { stream in
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
-            stream.onTermination = { @Sendable _ in
-                self.stopMonitoringAccuracyAuthorization()
+            stream.onTermination = {
+                @Sendable _ in
+                Task { await self.stopMonitoringAccuracyAuthorization() }
             }
         }
     }
@@ -131,7 +133,7 @@ public final class AsyncLocationManager {
     public func updateAccuracy(with newAccuracy: LocationAccuracy) {
         locationManager.desiredAccuracy = newAccuracy.convertingAccuracy
     }
-    
+
     @available(*, deprecated, message: "Use new function requestPermission(with:)")
     public func requestAuthorizationWhenInUse() async -> CLAuthorizationStatus {
         let authorizationPerformer = RequestAuthorizationPerformer()
@@ -147,11 +149,11 @@ public final class AsyncLocationManager {
                 }
             }
         }, onCancel: {
-            proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier) }
         })
     }
-    
-#if !APPCLIP
+
+    #if !APPCLIP
     @available(*, deprecated, message: "Use new function requestPermission(with:)")
     public func requestAuthorizationAlways() async -> CLAuthorizationStatus {
         let authorizationPerformer = RequestAuthorizationPerformer()
@@ -166,11 +168,11 @@ public final class AsyncLocationManager {
                 }
             }
         }, onCancel: {
-            proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier) }
         })
     }
-#endif
-    
+    #endif
+
     public func requestPermission(with permissionType: LocationPermission) async -> CLAuthorizationStatus {
         switch permissionType {
         case .always:
@@ -195,67 +197,70 @@ public final class AsyncLocationManager {
             monitoringPerformer.linkContinuation(streamContinuation)
             proxyDelegate.addPerformer(monitoringPerformer)
             locationManager.startUpdatingLocation()
-            streamContinuation.onTermination = { @Sendable _ in
-                self.proxyDelegate.cancel(for: monitoringPerformer.uniqueIdentifier)
+            streamContinuation.onTermination = {
+                @Sendable _ in
+                Task { await self.proxyDelegate.cancel(for: monitoringPerformer.uniqueIdentifier) }
             }
         }
     }
-    
+
     public func stopUpdatingLocation() {
         locationManager.stopUpdatingLocation()
         proxyDelegate.cancel(for: MonitoringUpdateLocationPerformer.self)
     }
-    
+
     public func requestLocation() async throws -> LocationUpdateEvent? {
         let performer = SingleLocationUpdatePerformer()
         return try await withTaskCancellationHandler(operation: {
-            return try await withCheckedThrowingContinuation({ continuation in
+            try await withCheckedThrowingContinuation({ continuation in
                 performer.linkContinuation(continuation)
                 self.proxyDelegate.addPerformer(performer)
                 self.locationManager.requestLocation()
             })
         }, onCancel: {
-            proxyDelegate.cancel(for: performer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: performer.uniqueIdentifier) }
         })
     }
-    
+
     public func startMonitoring(for region: CLRegion) async -> RegionMonitoringStream {
         let performer = RegionMonitoringPerformer(region: region)
         return RegionMonitoringStream { streamContinuation in
             performer.linkContinuation(streamContinuation)
             locationManager.startMonitoring(for: region)
-            streamContinuation.onTermination = { @Sendable _ in
-                self.proxyDelegate.cancel(for: performer.uniqueIdentifier)
+            streamContinuation.onTermination = {
+                @Sendable _ in
+                Task { await self.proxyDelegate.cancel(for: performer.uniqueIdentifier) }
             }
         }
     }
-    
+
     public func stopMonitoring(for region: CLRegion) {
         proxyDelegate.cancel(for: RegionMonitoringPerformer.self) { regionMonitoring in
             guard let regionPerformer = regionMonitoring as? RegionMonitoringPerformer else { return false }
-            return regionPerformer.region ==  region
+            return regionPerformer.region == region
         }
         locationManager.stopMonitoring(for: region)
     }
-    
+
     public func startMonitoringVisit() async -> VisitMonitoringStream {
         let performer = VisitMonitoringPerformer()
         return VisitMonitoringStream { stream in
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
             locationManager.startMonitoringVisits()
-            stream.onTermination = { @Sendable _ in
-                self.stopMonitoringVisit()
+            stream.onTermination = {
+                @Sendable _ in
+                Task { await self.stopMonitoringVisit() }
             }
         }
     }
-    
+
     public func stopMonitoringVisit() {
         proxyDelegate.cancel(for: VisitMonitoringPerformer.self)
         locationManager.stopMonitoringVisits()
     }
-    
-#if os(iOS)
+
+    #if os(iOS)
     @available(iOS 13, *)
     public func startUpdatingHeading() async -> HeadingMonitorStream {
         let performer = HeadingMonitorPerformer()
@@ -263,30 +268,32 @@ public final class AsyncLocationManager {
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
             locationManager.startUpdatingHeading()
-            stream.onTermination = { @Sendable _ in
-                self.stopUpdatingHeading()
+            stream.onTermination = {
+                @Sendable _ in
+                Task { await self.stopUpdatingHeading() }
             }
         }
     }
-    
+
     public func stopUpdatingHeading() {
         proxyDelegate.cancel(for: HeadingMonitorPerformer.self)
         locationManager.stopUpdatingHeading()
     }
-#endif
-    
+    #endif
+
     public func startRangingBeacons(satisfying: CLBeaconIdentityConstraint) async -> BeaconsRangingStream {
         let performer = BeaconsRangePerformer(satisfying: satisfying)
         return BeaconsRangingStream { stream in
             performer.linkContinuation(stream)
             proxyDelegate.addPerformer(performer)
             locationManager.startRangingBeacons(satisfying: satisfying)
-            stream.onTermination = { @Sendable _ in
-                self.stopRangingBeacons(satisfying: satisfying)
+            stream.onTermination = {
+                @Sendable _ in
+                Task { await self.stopRangingBeacons(satisfying: satisfying) }
             }
         }
     }
-    
+
     public func stopRangingBeacons(satisfying: CLBeaconIdentityConstraint) {
         proxyDelegate.cancel(for: BeaconsRangePerformer.self) { beaconsMonitoring in
             guard let beaconsPerformer = beaconsMonitoring as? BeaconsRangePerformer else { return false }
@@ -311,10 +318,10 @@ extension AsyncLocationManager {
                 }
             }
         }, onCancel: {
-            proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier) }
         })
     }
-    
+
     private func locationPermissionAlways() async -> CLAuthorizationStatus {
         let authorizationPerformer = RequestAuthorizationPerformer()
         return await withTaskCancellationHandler(operation: {
@@ -328,7 +335,7 @@ extension AsyncLocationManager {
                 }
             }
         }, onCancel: {
-            proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier) }
         })
     }
 
@@ -350,7 +357,7 @@ extension AsyncLocationManager {
                 }
             }
         }, onCancel: {
-            proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
+            Task { await proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier) }
         })
     }
 }

@@ -23,7 +23,7 @@
 import Foundation
 import CoreLocation
 
-public enum AuthorizationEvent {
+public enum AuthorizationEvent: Sendable {
     case didUpdate(authorization: CLAuthorizationStatus)
 }
 

@@ -23,7 +23,7 @@
 import Foundation
 import CoreLocation
 
-public enum LocationEnabledEvent {
+public enum LocationEnabledEvent: Sendable {
     case didUpdate(enabled: Bool)
 }
 
