@@ -353,7 +353,14 @@ extension AsyncLocationManager {
                 } else {
                     authorizationPerformer.linkContinuation(continuation)
                     proxyDelegate.addPerformer(authorizationPerformer)
-                    locationManager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: purposeKey)
+                    locationManager.requestTemporaryFullAccuracyAuthorization(withPurposeKey: purposeKey) { [weak self] error in
+                        guard let self else { return }
+                        Task {
+                            await self.proxyDelegate.eventForMethodInvoked(
+                                .didChangeAccuracyAuthorization(authorization: self.locationManager.accuracyAuthorization)
+                            )
+                        }
+                    }
                 }
             }
         }, onCancel: {
