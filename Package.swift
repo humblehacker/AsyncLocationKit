@@ -25,6 +25,6 @@ let package = Package(
             name: "AsyncLocationKitTests",
             dependencies: ["AsyncLocationKit"]),
     ],
-    
-    swiftLanguageVersions: [.version("5.5")]
+
+    swiftLanguageVersions: [.version("5.7")]
 )
