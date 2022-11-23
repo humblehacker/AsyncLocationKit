@@ -24,6 +24,10 @@ import Foundation
 import CoreLocation
 
 class RequestAccuracyAuthorizationPerformer: AnyLocationPerformer {
+    deinit {
+        print("\(Self.self).deinit")
+    }
+
     var typeIdentifier: ObjectIdentifier {
         return ObjectIdentifier(Self.self)
     }
@@ -45,6 +49,7 @@ class RequestAccuracyAuthorizationPerformer: AnyLocationPerformer {
     }
 
     func invokedMethod(event: CoreLocationDelegateEvent) {
+        print("\(Self.self).invokedMethod(\(event))")
         switch event {
         case .didChangeAccuracyAuthorization(let authorization):
             guard let continuation = continuation else { cancellabel?.cancel(for: self); return }

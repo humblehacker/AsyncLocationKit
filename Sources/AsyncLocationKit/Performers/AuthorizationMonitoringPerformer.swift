@@ -47,6 +47,7 @@ class AuthorizationMonitoringPerformer: AnyLocationPerformer {
     }
 
     func invokedMethod(event: CoreLocationDelegateEvent) {
+        print("\(Self.self).invokedMethod(\(event))")
         switch event {
         case .didChangeAuthorization(let authorization):
             stream?.yield(.didUpdate(authorization: authorization))

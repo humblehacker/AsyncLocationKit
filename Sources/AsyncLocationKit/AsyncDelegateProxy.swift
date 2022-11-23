@@ -52,7 +52,7 @@ protocol Cancellabel: AnyObject {
 protocol AsyncDelegateProxyInterface: AnyObject {
     func eventForMethodInvoked(_ event: CoreLocationDelegateEvent)
     func addPerformer(_ performer: AnyLocationPerformer)
-    
+
     func cancel(for type: AnyLocationPerformer.Type)
     func cancel(for uniqueIdentifier: UUID)
     func cancel(for type: AnyLocationPerformer.Type, with condition: @escaping CancelationCondition)
@@ -61,26 +61,27 @@ protocol AsyncDelegateProxyInterface: AnyObject {
 final class AsyncDelegateProxy: AsyncDelegateProxyInterface {
     /// Array of performers, who handle events from normal delegate
     var performers: [AnyLocationPerformer] = []
-    
+
     /// Handle method from delegate converted to **enum** case
     /// - Parameter event: case converting from method of normal delegate
     func eventForMethodInvoked(_ event: CoreLocationDelegateEvent) {
+        print("AsyncDelegateProxy.eventForMethodInvoked(\(event))")
         for performer in performers {
             if performer.eventSupported(event) {
                 performer.invokedMethod(event: event)
             }
         }
     }
-    
+
     func addPerformer(_ performer: AnyLocationPerformer) {
         performer.cancellabel = self
         performers.append(performer)
     }
-    
+
     func cancel(for type: AnyLocationPerformer.Type) {
         performers.removeAll(where: { $0.typeIdentifier == ObjectIdentifier(type) })
     }
-    
+
     func cancel(for uniqueIdentifier: UUID) {
         performers.removeAll { performer in
             if performer.uniqueIdentifier == uniqueIdentifier {
@@ -91,7 +92,7 @@ final class AsyncDelegateProxy: AsyncDelegateProxyInterface {
             }
         }
     }
-    
+
     func cancel(for type: AnyLocationPerformer.Type, with condition: @escaping (AnyLocationPerformer) -> Bool) {
         var filteredPerformer = performers.allWith(identifier: ObjectIdentifier(type))
         filteredPerformer.removeAll(where: { condition($0) })
@@ -106,3 +107,4 @@ extension AsyncDelegateProxy: Cancellabel {
         performers.removeAll(where: { $0.uniqueIdentifier == performer.uniqueIdentifier })
     }
 }
+
