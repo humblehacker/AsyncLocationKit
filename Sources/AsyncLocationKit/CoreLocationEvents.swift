@@ -26,7 +26,9 @@ import CoreLocation
 
 enum CoreLocationDelegateEvent {
 //    MARK: - Authorization event
+    case didChangeLocationEnabled(enabled: Bool)
     case didChangeAuthorization(status: CLAuthorizationStatus)
+    case didChangeAccuracyAuthorization(authorization: CLAccuracyAuthorization)
 //    MARK: - Location events
     case didUpdate(locations: [CLLocation])
     case didUpdateHeading(heading: CLHeading)
@@ -49,8 +51,12 @@ enum CoreLocationDelegateEvent {
     
     func rawEvent() -> CoreLocationEventSupport {
         switch self {
+        case .didChangeLocationEnabled(_):
+            return .didChangeLocationEnabled
         case .didChangeAuthorization(_):
             return .didChangeAuthorization
+        case .didChangeAccuracyAuthorization(_):
+            return .didChangeAccuracyAuthorization
         case .didUpdate(_):
             return .didUpdateLocations
         case .didUpdateHeading(_):
@@ -83,7 +89,9 @@ enum CoreLocationDelegateEvent {
 
 /// Event for mark what support current delegate
 enum CoreLocationEventSupport {
+    case didChangeLocationEnabled
     case didChangeAuthorization
+    case didChangeAccuracyAuthorization
     case didUpdateLocations
     case didUpdateHeading
     case didDetermineState
