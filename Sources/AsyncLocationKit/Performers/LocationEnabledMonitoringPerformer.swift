@@ -47,6 +47,7 @@ class LocationEnabledMonitoringPerformer: AnyLocationPerformer {
     }
 
     func invokedMethod(event: CoreLocationDelegateEvent) {
+        print("\(Self.self).invokedMethod(\(event))")
         switch event {
         case .didChangeLocationEnabled(let enabled):
             stream?.yield(.didUpdate(enabled: enabled))

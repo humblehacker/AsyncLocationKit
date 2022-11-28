@@ -40,7 +40,7 @@ public final class AsyncLocationManager {
     private var proxyDelegate: AsyncDelegateProxyInterface
     private var locationDelegate: CLLocationManagerDelegate
     private var desiredAccuracy: LocationAccuracy = .bestAccuracy
-    
+
     public init() {
         locationManager = CLLocationManager()
         proxyDelegate = AsyncDelegateProxy()
@@ -48,7 +48,7 @@ public final class AsyncLocationManager {
         locationManager.delegate = locationDelegate
         locationManager.desiredAccuracy = desiredAccuracy.convertingAccuracy
     }
-    
+
     public init(locationManager: CLLocationManager, desiredAccuracy: LocationAccuracy) {
         self.locationManager = locationManager
         proxyDelegate = AsyncDelegateProxy()
@@ -56,7 +56,7 @@ public final class AsyncLocationManager {
         self.locationManager.delegate = locationDelegate
         self.locationManager.desiredAccuracy = desiredAccuracy.convertingAccuracy
     }
-    
+
     public convenience init(desiredAccuracy: LocationAccuracy) {
         self.init()
         self.desiredAccuracy = desiredAccuracy
@@ -66,8 +66,7 @@ public final class AsyncLocationManager {
         // Though undocumented, `locationServicesEnabled()` must not be called from the main thread. Otherwise,
         // we get a runtime warning "This method can cause UI unresponsiveness if invoked on the main thread"
         // Therefore, we use `Task.detached` to ensure we're off the main thread.
-        // Also, we force `try` as we expect no exceptions to be thrown from `locationServicesEnabled()`
-        try! await Task.detached { CLLocationManager.locationServicesEnabled() }.value
+        await Task.detached { CLLocationManager.locationServicesEnabled() }.value
     }
 
     public func getAuthorizationStatus() -> CLAuthorizationStatus {
@@ -131,10 +130,10 @@ public final class AsyncLocationManager {
     public func updateAccuracy(with newAccuracy: LocationAccuracy) {
         locationManager.desiredAccuracy = newAccuracy.convertingAccuracy
     }
-    
+
     @available(*, deprecated, message: "Use new function requestPermission(with:)")
     public func requestAuthorizationWhenInUse() async -> CLAuthorizationStatus {
-        let authorizationPerformer = RequestAuthorizationPerformer()
+        let authorizationPerformer = RequestAuthorizationPerformer(currentStatus: getAuthorizationStatus())
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 let authorizationStatus = getAuthorizationStatus()
@@ -150,11 +149,11 @@ public final class AsyncLocationManager {
             proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
         })
     }
-    
+
 #if !APPCLIP
     @available(*, deprecated, message: "Use new function requestPermission(with:)")
     public func requestAuthorizationAlways() async -> CLAuthorizationStatus {
-        let authorizationPerformer = RequestAuthorizationPerformer()
+        let authorizationPerformer = RequestAuthorizationPerformer(currentStatus: getAuthorizationStatus())
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 if #available(iOS 14, *), locationManager.authorizationStatus != .notDetermined && locationManager.authorizationStatus != .authorizedWhenInUse {
@@ -170,7 +169,7 @@ public final class AsyncLocationManager {
         })
     }
 #endif
-    
+
     public func requestPermission(with permissionType: LocationPermission) async -> CLAuthorizationStatus {
         switch permissionType {
         case .always:
@@ -200,12 +199,12 @@ public final class AsyncLocationManager {
             }
         }
     }
-    
+
     public func stopUpdatingLocation() {
         locationManager.stopUpdatingLocation()
         proxyDelegate.cancel(for: MonitoringUpdateLocationPerformer.self)
     }
-    
+
     public func requestLocation() async throws -> LocationUpdateEvent? {
         let performer = SingleLocationUpdatePerformer()
         return try await withTaskCancellationHandler(operation: {
@@ -218,7 +217,7 @@ public final class AsyncLocationManager {
             proxyDelegate.cancel(for: performer.uniqueIdentifier)
         })
     }
-    
+
     public func startMonitoring(for region: CLRegion) async -> RegionMonitoringStream {
         let performer = RegionMonitoringPerformer(region: region)
         return RegionMonitoringStream { streamContinuation in
@@ -229,7 +228,7 @@ public final class AsyncLocationManager {
             }
         }
     }
-    
+
     public func stopMonitoring(for region: CLRegion) {
         proxyDelegate.cancel(for: RegionMonitoringPerformer.self) { regionMonitoring in
             guard let regionPerformer = regionMonitoring as? RegionMonitoringPerformer else { return false }
@@ -237,7 +236,7 @@ public final class AsyncLocationManager {
         }
         locationManager.stopMonitoring(for: region)
     }
-    
+
     public func startMonitoringVisit() async -> VisitMonitoringStream {
         let performer = VisitMonitoringPerformer()
         return VisitMonitoringStream { stream in
@@ -249,12 +248,12 @@ public final class AsyncLocationManager {
             }
         }
     }
-    
+
     public func stopMonitoringVisit() {
         proxyDelegate.cancel(for: VisitMonitoringPerformer.self)
         locationManager.stopMonitoringVisits()
     }
-    
+
 #if os(iOS)
     @available(iOS 13, *)
     public func startUpdatingHeading() async -> HeadingMonitorStream {
@@ -268,13 +267,13 @@ public final class AsyncLocationManager {
             }
         }
     }
-    
+
     public func stopUpdatingHeading() {
         proxyDelegate.cancel(for: HeadingMonitorPerformer.self)
         locationManager.stopUpdatingHeading()
     }
 #endif
-    
+
     public func startRangingBeacons(satisfying: CLBeaconIdentityConstraint) async -> BeaconsRangingStream {
         let performer = BeaconsRangePerformer(satisfying: satisfying)
         return BeaconsRangingStream { stream in
@@ -286,7 +285,7 @@ public final class AsyncLocationManager {
             }
         }
     }
-    
+
     public func stopRangingBeacons(satisfying: CLBeaconIdentityConstraint) {
         proxyDelegate.cancel(for: BeaconsRangePerformer.self) { beaconsMonitoring in
             guard let beaconsPerformer = beaconsMonitoring as? BeaconsRangePerformer else { return false }
@@ -298,7 +297,7 @@ public final class AsyncLocationManager {
 
 extension AsyncLocationManager {
     private func locationPermissionWhenInUse() async -> CLAuthorizationStatus {
-        let authorizationPerformer = RequestAuthorizationPerformer()
+        let authorizationPerformer = RequestAuthorizationPerformer(currentStatus: getAuthorizationStatus())
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 let authorizationStatus = getAuthorizationStatus()
@@ -314,9 +313,9 @@ extension AsyncLocationManager {
             proxyDelegate.cancel(for: authorizationPerformer.uniqueIdentifier)
         })
     }
-    
+
     private func locationPermissionAlways() async -> CLAuthorizationStatus {
-        let authorizationPerformer = RequestAuthorizationPerformer()
+        let authorizationPerformer = RequestAuthorizationPerformer(currentStatus: getAuthorizationStatus())
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 if #available(iOS 14, *), locationManager.authorizationStatus != .notDetermined && locationManager.authorizationStatus != .authorizedWhenInUse {
@@ -351,6 +350,15 @@ extension AsyncLocationManager {
                             continuation.resume(with: .failure(error))
                             return
                         }
+
+                        // If the user chooses reduced accuracy, the didChangeAuthorization delegate method
+                        // will not called. So we must emulate that here.
+                        if self.locationManager.accuracyAuthorization == .reducedAccuracy {
+                            self.proxyDelegate.eventForMethodInvoked(
+                                .didChangeAccuracyAuthorization(authorization: self.locationManager.accuracyAuthorization)
+                            )
+                        }
+                        print("got temporary full accuracy authorization \(self.locationManager.accuracyAuthorization.rawValue)")
                     }
                 }
             }
@@ -359,3 +367,27 @@ extension AsyncLocationManager {
         })
     }
 }
+
+extension CLAuthorizationStatus: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .notDetermined: return ".notDetermined"
+        case .restricted: return ".restricted"
+        case .denied: return ".denied"
+        case .authorizedWhenInUse: return ".authorizedWhenInUse"
+        case .authorizedAlways: return ".authorisedAlways"
+        @unknown default: return "unknown \(rawValue)"
+        }
+    }
+}
+
+extension CLAccuracyAuthorization: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .fullAccuracy: return ".fullAccuracy"
+        case .reducedAccuracy: return ".reducedAccuracy"
+        @unknown default: return "unknown \(rawValue)"
+        }
+    }
+}
+

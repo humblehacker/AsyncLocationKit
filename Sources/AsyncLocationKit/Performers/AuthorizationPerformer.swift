@@ -21,42 +21,104 @@
 //  SOFTWARE.
 
 import Foundation
+
 import CoreLocation.CLLocation
 
 class RequestAuthorizationPerformer: AnyLocationPerformer {
+    private let currentStatus: CLAuthorizationStatus
+    private var applicationStateMonitor: ApplicationStateMonitor!
+
+    init(currentStatus: CLAuthorizationStatus) {
+        self.currentStatus = currentStatus
+        print("\(self)(\(ObjectIdentifier(self)).init(\(currentStatus))")
+    }
+
+    deinit {
+        print("\(self)(\(ObjectIdentifier(self)).deinit")
+    }
+
     var typeIdentifier: ObjectIdentifier {
         return ObjectIdentifier(Self.self)
     }
-    
+
     var uniqueIdentifier: UUID = UUID()
-    
+
     var eventsSupport: [CoreLocationEventSupport] = [.didChangeAuthorization]
-    
+
     var continuation: AuthotizationContinuation?
-    
+
     weak var cancellabel: Cancellabel?
-    
+
     func linkContinuation(_ continuation: AuthotizationContinuation) {
         self.continuation = continuation
+        Task { await start() }
     }
-    
+
+    func start() async {
+        applicationStateMonitor = await ApplicationStateMonitor()
+        await applicationStateMonitor.startMonitoringApplicationState()
+
+        print("waiting for dialog to appear \(Date.timeIntervalSinceReferenceDate)")
+
+        // Wait a brief amount of time for the permission dialog to appear.
+        Task { [applicationStateMonitor, currentStatus] in
+            guard let applicationStateMonitor else { return }
+            try await Task.sleep(nanoseconds: UInt64(Double(NSEC_PER_SEC) * 0.3))
+
+            if await !applicationStateMonitor.hasResignedActive {
+                // We timed out waiting for the dialog to appear, so we can assume that the permission request
+                // silently failed. We then emit the `currentStatus` to be returned to the caller.
+                print("Timed out waiting for hasResignedActive")
+                await applicationStateMonitor.stopMonitoringApplicationState()
+                await MainActor.run {
+                    self.invokedMethod(event:.didChangeAuthorization(status: currentStatus))
+                }
+            }
+        }
+    }
+
     func eventSupported(_ event: CoreLocationDelegateEvent) -> Bool {
         return eventsSupport.contains(event.rawEvent())
     }
-    
+
     func invokedMethod(event: CoreLocationDelegateEvent) {
+        print("\(Self.self).invokedMethod(\(event))")
         switch event {
         case .didChangeAuthorization(let status):
             if status != .notDetermined {
-                guard let continuation = continuation else { cancellabel?.cancel(for: self); return }
-                continuation.resume(returning: status)
-                self.continuation = nil
-                cancellabel?.cancel(for: self)
+                Task {
+                    if await applicationStateMonitor.hasResignedActive {
+                        print("waiting for dialog to be dismissed")
+                        _ = await applicationStateMonitor.hasBecomeActive()
+                    }
+
+                    guard let continuation = continuation else { cancellabel?.cancel(for: self); return }
+                    continuation.resume(returning: status)
+                    self.continuation = nil
+                    cancellabel?.cancel(for: self)
+                }
             }
         default:
             fatalError("Method can't be execute by this performer: \(String(describing: self)) for event: \(type(of: event))")
         }
     }
-    
-    func cancelation() { }
+
+    func cancelation() {
+        Task {
+            await applicationStateMonitor.stopMonitoringApplicationState()
+        }
+    }
+
+    // ---
+
+    // When requesting WhenInUse, we need to know if the user chose "Allow Once" or "Allow While
+    // Using App" for subsequent calls to `requestAlwaysAuthorization()`. Otherwise calls to
+    // `requestAlwaysAuthorization()` will get stuck if they come after the user taps "Allow Once",
+    // as these some calls are ignored and won't trigger a delegate call to `didChangeAuthorization`.
+    // So we need to start monitoring the app's active state. If the state does not transition to
+    // inactive within a fixed timeout, then we can assume that the authorization request silently
+    // failed.
+
 }
+
+
